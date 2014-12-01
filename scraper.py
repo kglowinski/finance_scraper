@@ -16,9 +16,11 @@ class ImproperSymbolException(Exception):
 
 def main():
    
-    tickers_uri = './test_files/combined_sec_list_jan_2014.csv'
-    ticker_symbols_mf, ticker_symbols_etf = read_csv_list(tickers_uri)
-
+    #tickers_uri = './test_files/combined_sec_list_jan_2014.csv'
+    #ticker_symbols_mf, ticker_symbols_etf = read_csv_list(tickers_uri)
+    ticker_symbols_mf = ['CPOBX', 'SPECX']
+    ticker_symbols_etf = ['IVV', 'IJS']
+    
     print(ticker_symbols_etf)
     print(len(ticker_symbols_etf))
 
@@ -39,7 +41,7 @@ def scrape_etf_pages(quote_url_start, perf_url_start, risk_url_start, ticker_sym
 
     info_dict = {}
 
-    driver = webdriver.PhantomJS()
+    driver = webdriver.PhantomJS(executable_path='C:\phantomjs\phantomjs-1.9.8-windows\phantomjs.exe')
 
     for symbol in ticker_symbols:
         
@@ -142,7 +144,7 @@ def scrape_mf_pages(perf_url_start, risk_url_start, ticker_symbols):
 
     info_dict = {}
 
-    driver = webdriver.PhantomJS()
+    driver = webdriver.PhantomJS(executable_path='C:\phantomjs\phantomjs-1.9.8-windows\phantomjs.exe')
 
     for symbol in ticker_symbols:
         
