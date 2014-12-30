@@ -229,8 +229,8 @@ def get_earnings_and_book(url, symbol):
     #Second item is against the benchmark index. Going to use that.
     #Sometimes pulls too fast, so no data. 
     try:
-        price_to_earn = float(table_rows[3].find_all("td")[1].text)
-        price_to_book = float(table_rows[5].find_all("td")[1].text)
+        price_to_earn = float(table_rows[3].find_all("td")[0].text)
+        price_to_book = float(table_rows[5].find_all("td")[0].text)
     except ValueError:
         raise CorruptPullError
     
