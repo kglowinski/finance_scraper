@@ -2,4 +2,4 @@ from distutils.core import setup
 
 import py2exe
 
-setup(console=['reliable_scraper.py'])
+setup(console=['parallel_scraper.py'])
