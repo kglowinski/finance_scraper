@@ -5,6 +5,8 @@ from datetime import datetime, date
 from bs4 import BeautifulSoup as bs
 from multiprocessing import Pool, freeze_support
 
+
+
 class CorruptPullError(Exception):
     '''Want an exception class that we can throw if we "pull data" but it's a blank.'''
     pass
@@ -13,7 +15,7 @@ def get_stats():
     
     symbols = create_input_list('.\\combined_in.csv')
     
-    pool = Pool(4)
+    pool = Pool(8)
     results = pool.map(return_sec_info, symbols)
     '''results = []
     for symbol in symbols:
@@ -77,6 +79,10 @@ def return_sec_info(symbol):
             #are legit.
             print "Looping for " + str(symbol)
             continue
+        #Any exceptions that aren't normal bad loading. Should help debug.
+        except:
+            print "Breaking on " + symbol + "."
+            raise
             
 def get_soup(url, symbol):
 
@@ -119,7 +125,7 @@ def scrape_etf_info(symbol):
     else:
         #Going to return a tuple here, since we just have the two things.
         pe_and_p2b = get_earnings_and_book(port_url, symbol)
-        info_dict['p2e'], info_dict['p2b'] = pe_and_p2b
+        info_dict['p2e'], info_dict['earn_bench'], info_dict['p2b'] = pe_and_p2b
     
     return info_dict
 
@@ -157,7 +163,7 @@ def scrape_mf_info(symbol):
     else:
         #Going to return a tuple here, since we just have the two things.
         pe_and_p2b = get_earnings_and_book(port_url, symbol)
-        info_dict['p2e'], info_dict['p2b'] = pe_and_p2b
+        info_dict['p2e'], info_dict['earn_bench'], info_dict['p2b'] = pe_and_p2b
     
     return info_dict
     
@@ -165,8 +171,15 @@ def get_m_star_rating(url, symbol):
     
     soup = get_soup(url, symbol)
     m_string = soup.find("span", {"id": "star_span"})
-    #Puts the class return into a list, [0] gets the single element in that list.
-    snippet = m_string.get("class")[0]
+        
+    try:
+        #Puts the class return into a list, [0] gets the single element in that list.
+        snippet = m_string.get("class")[0]
+    #AttributeError is happening if page hasn't loaded properly, and it tries to do a
+    #get on the NoneType results of the first find.
+    except AttributeError:
+        raise CorruptPullError
+        
     stars = snippet[len(snippet)-1]
     
     name = soup.find("div", {"class": "r_title"}).find("h1").text
@@ -196,21 +209,30 @@ def get_historical_info(url, symbol):
         except ValueError:
             perf_dict[year] = '-'
     
+    print "Hist for " + symbol
+    print perf_dict
     return perf_dict
 
 def get_decile_ranks(url, symbol, row):
     #Taking in a row number because etf page uses row 7, and MF uses 6
     
     soup = get_soup(url, symbol)
-    headers = soup.find_all("tr")[0].find_all("th")
-    years = map(lambda x: x.text, headers[len(headers)-6:len(headers)-1])
+    headers = map(lambda x: x.text, soup.find_all("tr")[0].find_all("th"))
+    prev_year = str(date.today().year-1)
+    
+    #With etfs, curr have a bug where 2014 shows as 0
+    if '0' in headers:
+        headers[headers.index('0')] = prev_year
+    prev_year_idx = headers.index(prev_year)
     
     #Having an issue with it not fully loading.
     try:
-        ranks = soup.find_all("tr")[row].find_all("td")
+        ranks = map(lambda x: x.text, soup.find_all("tr")[row].find_all("td"))
     except IndexError:
         raise CorruptPullError
-    deciles = map(lambda x: x.text, ranks[5:10])
+    #Why don't these line up? Who knows.
+    deciles = ranks[prev_year_idx-5:prev_year_idx]
+    years = headers[prev_year_idx-4:prev_year_idx+1]
     
     yearly_rank = {}
     for i, year in enumerate(years):
@@ -222,19 +244,35 @@ def get_decile_ranks(url, symbol, row):
     return yearly_rank
 
 def get_earnings_and_book(url, symbol):
+
+    #Want to make sure we're not reloading forever. 
+    if not hasattr(get_earnings_and_book, 'reloaded'):
+        get_earnings_and_book.reloaded = 0
+
     soup = get_soup(url, symbol)
-    
     table_rows = soup.find_all("table", {"class": "r_table1 text2"})[1].find_all("tr")
     
-    #Second item is against the benchmark index. Going to use that.
+    #Second item is the benchmark index. Going to use that too.
     #Sometimes pulls too fast, so no data. 
     try:
         price_to_earn = float(table_rows[3].find_all("td")[0].text)
+        p2e_bench = float(table_rows[3].find_all("td")[1].text)
         price_to_book = float(table_rows[5].find_all("td")[0].text)
     except ValueError:
-        raise CorruptPullError
+        #International securities don't have benchmarks. If it has reloaded 10
+        #times, this is probably the case. Give up.
+        if get_earnings_and_book.reloaded > 9:
+            price_to_earn = float(table_rows[3].find_all("td")[0].text)
+            p2e_bench = '-'
+            price_to_book = float(table_rows[5].find_all("td")[0].text)
+            #reset the counter for the next security
+            get_earnings_and_book.reloaded = 0
+        else:
+            get_earnings_and_book.reloaded += 1
+            print "Reloaded " + str(get_earnings_and_book.reloaded) + " times."
+            raise CorruptPullError
     
-    return (price_to_earn, price_to_book)
+    return (price_to_earn, p2e_bench, price_to_book)
 
 def get_beta(url, symbol):
     soup = get_soup(url, symbol)
@@ -265,7 +303,8 @@ def create_output_file(uri, results_list):
     with open(uri, 'wb') as x_file:
         x_writer = csv.writer(x_file)
 
-        x_writer.writerow(['Symbol', 'Name', 'Class', 'MStar Rating', '1 Year', '3 Year', '5 Year', '10 Year', '2010', '2011', '2012', '2013', '2014', 'Beta', 'Sharpe Ratio', 'P2Earn', 'P2Book'])
+        x_writer.writerow(['Symbol', 'Name', 'Class', 'MStar Rating', '1 Year', '3 Year', '5 Year',
+                '10 Year', '2010', '2011', '2012', '2013', '2014', 'Beta', 'Sharpe Ratio', 'P2Earn', 'P2Earn_Bench', 'P2Book'])
 
         for info_dict in results_list:
 
@@ -283,11 +322,14 @@ def create_output_file(uri, results_list):
             curr_year = date.today().year
             past_5_yrs = range(curr_year-5, curr_year)
             temp_list = []
+            print "Doing deciles for " + info_dict['symbol'] + "."
             for year in past_5_yrs:
+            
                 line.append(info_dict['ranks'][str(year)])
             line.append(info_dict['beta'])
             line.append(info_dict['sharpe'])
             line.append(info_dict['p2e'])
+            line.append(info_dict['earn_bench'])
             line.append(info_dict['p2b'])
             
             trigger = None
