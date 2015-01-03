@@ -5,8 +5,6 @@ from datetime import datetime, date
 from bs4 import BeautifulSoup as bs
 from multiprocessing import Pool, freeze_support
 
-
-
 class CorruptPullError(Exception):
     '''Want an exception class that we can throw if we "pull data" but it's a blank.'''
     pass
@@ -120,8 +118,9 @@ def scrape_etf_info(symbol):
     info_dict['beta'], info_dict['sharpe'] = beta, sharpe
     
     #Bonds don't have a price/earnings or price/book
-    if "bond" in category.lower():
-        info_dict['p2e'], info_dict['p2b'] = '-', '-'
+    forbidden = ["bond", "loan", "government"]
+    if any(x in category.lower() for x in forbidden):
+        info_dict['p2e'], info_dict['p2b'], info_dict['earn_bench'] = '-', '-', '-'
     else:
         #Going to return a tuple here, since we just have the two things.
         pe_and_p2b = get_earnings_and_book(port_url, symbol)
@@ -158,8 +157,9 @@ def scrape_mf_info(symbol):
     info_dict['beta'], info_dict['sharpe'] = beta, sharpe
     
     #Bonds don't have a price/earnings or price/book
-    if "bond" in category.lower():
-        info_dict['p2e'], info_dict['p2b'] = '-', '-'
+    forbidden = ["bond", "loan", "government"]
+    if any(x in category.lower() for x in forbidden):
+        info_dict['p2e'], info_dict['p2b'], info_dict['earn_bench'] = '-', '-', '-'
     else:
         #Going to return a tuple here, since we just have the two things.
         pe_and_p2b = get_earnings_and_book(port_url, symbol)
@@ -209,8 +209,6 @@ def get_historical_info(url, symbol):
         except ValueError:
             perf_dict[year] = '-'
     
-    print "Hist for " + symbol
-    print perf_dict
     return perf_dict
 
 def get_decile_ranks(url, symbol, row):
@@ -322,7 +320,7 @@ def create_output_file(uri, results_list):
             curr_year = date.today().year
             past_5_yrs = range(curr_year-5, curr_year)
             temp_list = []
-            print "Doing deciles for " + info_dict['symbol'] + "."
+
             for year in past_5_yrs:
             
                 line.append(info_dict['ranks'][str(year)])
@@ -334,7 +332,7 @@ def create_output_file(uri, results_list):
             
             trigger = None
 
-            words = ['large', 'small', 'mid', 'bond']
+            words = ['large', 'small', 'mid', 'bond', 'government']
             for w in words:
                 if w in info_dict['category'].lower():
                     trigger = w
